@@ -1,16 +1,18 @@
 <?php
-
     /**
      * glue
      *
-     * Provides an easy way to map URLs to classes. URLs can be literal
+     * Provides an easy way to map URLs to controller files. URLs can be literal
      * strings or regular expressions.
      *
+     *
+     *    
      * When the URLs are processed:
      *      * deliminators (/) are automatically escaped: (\/)
      *      * The beginning and end are anchored (^ $)
      *      * An optional end slash is added (/?)
      *	    * The i option is added for case-insensitive searches
+     *	    * Ignores get variables at the end of the URI
      *
      * Example:
      *
@@ -19,13 +21,12 @@
      *     '/page/(\d+) => 'page'
      * );
      *
-     * class page {
-     *      function GET($matches) {
-     *          echo "Your requested page " . $matches[1];
-     *      }
-     * }
+     * FILE: ./controllers/page.php
+     * <?php
+     *     echo "Your requested page " . $matches[1];
+     * 
      *
-     * glue::stick($urls);
+     * glue::stick($urls, './controllers/');
      *
      */
     class glue {
@@ -41,35 +42,48 @@
          * @throws  BadMethodCallException  Thrown if a corresponding GET,POST is not found
          *
          */
-        static function stick ($urls) {
+        static function stick ($urls, $controller_path, $smarty=null, $pagenotfound=null ) {
 
-            $method = strtoupper($_SERVER['REQUEST_METHOD']);
             $path = $_SERVER['REQUEST_URI'];
-
+            
             $found = false;
-
+            
             krsort($urls);
-
-            foreach ($urls as $regex => $class) {
+            
+            
+            if (!is_dir($controller_path)) {
+                throw new Exception("Path, $controller_path, is not a valid directory!");
+            }
+            
+            foreach ($urls as $regex => $method) {
                 $regex = str_replace('/', '\/', $regex);
-                $regex = '^' . $regex . '\/?$';
+                $regex = '^' . $regex . '(\/)?' . '(\?[a-zA-Z0-9]+=.*)?' . '$';
                 if (preg_match("/$regex/i", $path, $matches)) {
                     $found = true;
-                    if (class_exists($class)) {
-                        $obj = new $class;
-                        if (method_exists($obj, $method)) {
-                            $obj->$method($matches);
-                        } else {
-                            throw new BadMethodCallException("Method, $method, not supported.");
-                        }
+                    $file_path = $controller_path . $method . ".php";
+                    if(substr($method, -4) == ".tpl") { // Quick load template
+                        $smarty->display($method);
+                        break; 
+                    }
+                    if (file_exists($file_path)) {
+                        include($file_path);
                     } else {
-                        throw new Exception("Class, $class, not found.");
+                        if ($pagenotfound == null) {
+                            throw new Exception("Controller file, $file_path, not found!");
+                        } else {
+                            include($controller_path . $pagenotfound . ".php");
+                        }
                     }
                     break;
                 }
             }
             if (!$found) {
-                throw new Exception("URL, $path, not found.");
+                if ($pagenotfound == null) {
+                    throw new Exception("URL, $path, not found.");
+                }
+                else {
+                    include($controller_path . $pagenotfound . ".php");
+                }
             }
         }
     }
